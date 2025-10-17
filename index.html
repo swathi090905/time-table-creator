@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Timetable Generator (Days in Column)</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        /* --- General Layout and Utility (Tailwind-like) --- */
+        body { margin: 0; font-family: sans-serif; background-color: #f3f4f6; }
+        .min-h-screen { min-height: 100vh; }
+        .p-8 { padding: 2rem; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+        .font-bold { font-weight: 700; }
+        .text-blue-600 { color: #2563eb; }
+        .mb-6 { margin-bottom: 1.5rem; }
+        .grid { display: grid; }
+        .grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .gap-6 { gap: 1.5rem; }
+        .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06); }
+        .rounded-xl { border-radius: 0.75rem; }
+        .rounded-lg { border-radius: 0.5rem; }
+        .bg-white { background-color: #ffffff; }
+        .p-6 { padding: 1.5rem; }
+        .p-4 { padding: 1rem; }
+        .mt-4 { margin-top: 1rem; }
+        .mb-4 { margin-bottom: 1rem; }
+        .text-lg { font-size: 1.125rem; }
+        .font-semibold { font-weight: 600; }
+        .text-blue-800 { color: #1e40af; }
+        .input-field { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; }
+        .bg-gray-50 { background-color: #f9fafb; }
+        .w-full { width: 100%; }
+        .py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+        .px-4 { padding-left: 1rem; padding-right: 1rem; }
+        .bg-blue-600 { background-color: #2563eb; }
+        .text-white { color: #ffffff; }
+        .hover\:bg-blue-700:hover { background-color: #1d4ed8; }
+        .bg-green-600 { background-color: #059669; }
+        .hover\:bg-green-700:hover { background-color: #047857; }
+        .bg-red-600 { background-color: #dc2626; }
+        .hover\:bg-red-700:hover { background-color: #b91c1c; }
+        .bg-yellow-100 { background-color: #fef3c7; }
+        .text-yellow-800 { color: #92400e; }
+        .text-red-600 { color: #dc2626; }
+        .text-gray-500 { color: #6b7280; }
+        .text-sm { font-size: 0.875rem; }
+        .text-xs { font-size: 0.75rem; }
+        .flex { display: flex; }
+        .justify-between { justify-content: space-between; }
+        .items-center { align-items: center; }
+        .border { border: 1px solid #d1d5db; }
+        .border-dashed { border-style: dashed; }
+        .space-x-2 > *:not([hidden]) ~ *:not([hidden]) { margin-left: 0.5rem; }
+        .space-y-3 > *:not([hidden]) ~ *:not([hidden]) { margin-top: 0.75rem; }
+
+        /* --- Timetable Specific Styles --- */
+        .timetable-output-section { break-after: page; }
+        .timetable-container { overflow-x: auto; margin-top: 2rem; padding: 1rem; background: #fff; border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .timetable-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; color: #000; text-align: center; }
+        .timetable-table { width: 100%; border-collapse: collapse; min-width: 800px; margin-bottom: 1rem; }
+        .timetable-table th, .timetable-table td { 
+            border: 1px solid #c4d7e5; 
+            padding: 8px 4px; 
+            text-align: center; 
+            height: 40px; 
+            vertical-align: middle;
+        }
+        .timetable-table th { background-color: #e0f2fe; font-weight: 700; color: #0284c7; }
+        .timetable-table .day-slot { background-color: #f1f5f9; font-weight: 600; } /* Day in first column */
+        .timetable-table .lunch-slot { background-color: #fecaca; color: #b91c1c; font-weight: 700; }
+        
+        .subject-cell { font-size: 0.9rem; line-height: 1.2; font-weight: 600; }
+        
+        /* Details Table */
+        .details-table-container { margin-top: 1rem; padding: 1rem; background-color: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 0.5rem; }
+        .details-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .details-table th, .details-table td { border: 1px solid #e5e7eb; padding: 6px; text-align: left; }
+        .details-table th { background-color: #eef2ff; color: #4338ca; font-weight: 700; }
+        
+        /* Subject colors */
+        .bg-theory { background-color: #fef9c3; } 
+        .bg-lab { background-color: #fee2e2; } 
+        .bg-development { background-color: #dbeafe; } 
+        .bg-activity { background-color: #d1fae5; } 
+
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo } = React;
+        
+        // --- Global Variables (Simulated Firebase for runnability) ---
+        const appId = 'default-app-id';
+        let db = { 
+            doc: () => ({}), 
+            setDoc: async (data) => console.log("Firestore simulated: Data saved.") 
+        };
+        let auth = { 
+            currentUser: { uid: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9) } 
+        };
+        const randomUUID = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9);
+
+        // --- Constants ---
+        const DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]; 
+        const SUBJECT_TYPES = [ 
+            { key: 'theory', label: 'Theory (1 Period)', slots: 1 },
+            { key: 'development', label: 'Development (2 Periods)', slots: 2 },
+            { key: 'lab', label: 'Lab (3 Periods)', slots: 3 },
+            { key: 'activity', label: 'Activity (1 Period)', slots: 1 },
+        ];
+        
+        // --- Utility Functions (Same as previous, omitted for brevity but included in the script) ---
+        const timeToMinutes = (timeStr) => {
+            if (!timeStr) return 0;
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        };
+
+        const minutesToTime = (minutes) => {
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        };
+
+        const calculateTimeSlots = (config) => {
+            const { startTime, endTime, periodDuration, lunchTime, lunchDuration } = config;
+
+            const startMin = timeToMinutes(startTime);
+            const endMin = timeToMinutes(endTime);
+            const lunchStartMin = timeToMinutes(lunchTime);
+            const lunchEndMin = lunchStartMin + (lunchDuration * 1);
+            const periodDurationNum = periodDuration * 1;
+
+            if (!startMin || !endMin || !periodDurationNum || periodDurationNum <= 0) {
+                return { slots: [], totalPeriods: 0 };
+            }
+
+            let currentTime = startMin;
+            const slots = [];
+
+            while (currentTime < endMin) {
+                const slotEnd = currentTime + periodDurationNum;
+
+                const isOverlappingLunch = slotEnd > lunchStartMin && currentTime < lunchEndMin;
+                const isEntirelyLunch = currentTime >= lunchStartMin && slotEnd <= lunchEndMin;
+                
+                if (isEntirelyLunch || isOverlappingLunch) {
+                    if (!slots.some(s => s.isLunch)) {
+                        slots.push({
+                            start: minutesToTime(lunchStartMin),
+                            end: minutesToTime(lunchEndMin),
+                            isLunch: true
+                        });
+                    }
+                    currentTime = lunchEndMin; 
+                    continue;
+                }
+
+                if (slotEnd <= endMin) {
+                    slots.push({
+                        start: minutesToTime(currentTime),
+                        end: minutesToTime(slotEnd),
+                        isLunch: false
+                    });
+                }
+                currentTime = slotEnd;
+            }
+
+            if (slots.length > 0 && slots[slots.length - 1].isLunch === false && timeToMinutes(slots[slots.length - 1].end) > endMin) {
+                slots.pop();
+            }
+
+            return { slots, totalPeriods: slots.filter(s => !s.isLunch).length };
+        };
+
+
+        // --- Initial State (Same as previous) ---
+        const initialConfig = {
+            periodDuration: 50, 
+            startTime: '09:00', 
+            endTime: '16:00',   
+            lunchTime: '12:30', 
+            lunchDuration: 30,  
+            numSections: 3,     
+            logoUrl: '',        
+        };
+        const initialSubjects = [
+            { id: randomUUID(), name: 'Data Structures', lecturer: 'Dr. Smith', type: 'theory', code: 'CS101', mobile: '123-456-7890', labStaff: [], frequency: 4 },
+            { id: randomUUID(), name: 'Web Dev Lab', lecturer: 'Ms. Alice', type: 'lab', code: 'CS102L', mobile: '987-654-3210', labStaff: ['Ms. Alice', 'Mr. Bob', 'Ms. Carol'], frequency: 1 },
+            { id: randomUUID(), name: 'DBMS', lecturer: 'Mr. Bob', type: 'theory', code: 'CS103', mobile: '555-123-4567', labStaff: [], frequency: 3 },
+            { id: randomUUID(), name: 'OS', lecturer: 'Dr. Smith', type: 'theory', code: 'CS104', mobile: '123-456-7890', labStaff: [], frequency: 2 },
+            { id: randomUUID(), name: 'Python Project', lecturer: 'Mr. Bob', type: 'development', code: 'CS105D', mobile: '555-123-4567', labStaff: [], frequency: 1 },
+            { id: randomUUID(), name: 'Career Dev', lecturer: 'Counsellor K', type: 'activity', code: 'GEN101A', mobile: '111-222-3333', labStaff: [], frequency: 1 },
+        ];
+
+        // --- Main Component (Same as previous) ---
+        const TimetableGenerator = () => {
+            const [config, setConfig] = useState(initialConfig);
+            const [subjects, setSubjects] = useState(initialSubjects);
+            const [schedules, setSchedules] = useState(null);
+            const [errors, setErrors] = useState([]);
+            const [isGenerating, setIsGenerating] = useState(false);
+            const [newSubject, setNewSubject] = useState({
+                name: '', lecturer: '', type: 'theory', code: '', mobile: '', labStaff: ['', '', '']
+            });
+            
+            const { slots: allSlots, totalPeriods } = useMemo(() => calculateTimeSlots(config), [config]);
+            const slots = useMemo(() => allSlots.filter(s => !s.isLunch), [allSlots]);
+
+            const sectionLetters = useMemo(() => {
+                return Array.from({ length: config.numSections }, (_, i) => String.fromCharCode(65 + i));
+            }, [config.numSections]);
+
+            // --- Handlers (Same as previous) ---
+            const handleConfigChange = (e) => {
+                const { name, value, type } = e.target;
+                setConfig(prev => ({
+                    ...prev,
+                    [name]: type === 'number' ? Number(value) : value
+                }));
+                setSchedules(null);
+            };
+
+            const handleNewSubjectChange = (e) => {
+                const { name, value } = e.target;
+                setNewSubject(prev => ({
+                    ...prev,
+                    [name]: value
+                }));
+            };
+
+            const handleLabStaffChange = (index, value) => {
+                const updatedStaff = [...newSubject.labStaff];
+                updatedStaff[index] = value;
+                setNewSubject(prev => ({ ...prev, labStaff: updatedStaff }));
+            };
+
+            const addSubject = (e) => {
+                e.preventDefault();
+                const type = SUBJECT_TYPES.find(t => t.key === newSubject.type);
+                if (!newSubject.name || !newSubject.lecturer || !newSubject.code) {
+                    alert('Please fill in Name, Lecturer, and Code.');
+                    return;
+                }
+
+                const newSub = {
+                    id: randomUUID(),
+                    name: newSubject.name,
+                    lecturer: newSubject.lecturer,
+                    type: newSubject.type,         
+                    code: newSubject.code,         
+                    mobile: newSubject.mobile,     
+                    labStaff: newSubject.type === 'lab' ? newSubject.labStaff.filter(s => s.trim() !== '') : [], 
+                    frequency: type.key === 'lab' || type.key === 'development' || type.key === 'activity' ? 1 : 4 
+                };
+
+                setSubjects(prev => [...prev, newSub]);
+                setNewSubject({
+                    name: '', lecturer: '', type: 'theory', code: '', mobile: '', labStaff: ['', '', '']
+                });
+                setSchedules(null);
+            };
+
+            const updateSubjectFrequency = (id, freq) => {
+                setSubjects(prev => prev.map(s => s.id === id ? { ...s, frequency: Number(freq) } : s));
+                setSchedules(null);
+            };
+
+            const removeSubject = (id) => {
+                setSubjects(prev => prev.filter(s => s.id !== id));
+                setSchedules(null);
+            };
+
+            const exportToPDF = () => {
+                const element = document.getElementById('timetable-output-section');
+                if (!element) return alert("Timetable not generated yet.");
+                
+                const filename = `Timetable_${config.numSections}Sections.pdf`;
+                
+                const opt = {
+                    margin: 0.5,
+                    filename: filename,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, logging: true, dpi: 192, letterRendering: true },
+                    jsPDF: { unit: 'in', format: 'A3', orientation: 'landscape' }
+                };
+
+                html2pdf().set(opt).from(element).save();
+            };
+
+            // --- Core Timetable Generation Logic (Same as previous) ---
+            const generateTimetable = useCallback(async () => {
+                setIsGenerating(true);
+                setSchedules(null);
+                setErrors([]);
+
+                if (totalPeriods === 0) {
+                     setErrors(["Configuration error: No valid time slots could be calculated."]);
+                     setIsGenerating(false);
+                     return;
+                }
+
+                const sections = sectionLetters;
+                const totalPeriodsPerWeek = totalPeriods * DAYS_OF_WEEK.length;
+                
+                const totalRequiredSlots = subjects.reduce((sum, sub) => {
+                    const subjectType = SUBJECT_TYPES.find(t => t.key === sub.type);
+                    return sum + (subjectType ? sub.frequency * subjectType.slots * sections.length : 0);
+                }, 0);
+
+                if (totalRequiredSlots > totalPeriodsPerWeek * sections.length) { 
+                    setErrors([`Total slots required (${totalRequiredSlots}) exceeds available slots per week (${totalPeriodsPerWeek * sections.length}).`]);
+                    setIsGenerating(false);
+                    return;
+                }
+                
+                const globalStaffAssignments = new Map(); 
+
+                // 1. Initialize the timetable structure (Day x Slot x Section)
+                let newSchedule = Array.from({ length: DAYS_OF_WEEK.length }, () =>
+                    Array.from({ length: totalPeriods }, () => 
+                        Array.from({ length: sections.length }, () => null) 
+                    )
+                );
+
+                const subjectMap = new Map(subjects.map(s => [s.id, s]));
+                const remainingSubjects = Array.from({ length: sections.length }, () => ({}));
+                subjects.forEach(sub => {
+                    const slotsNeeded = sub.frequency * SUBJECT_TYPES.find(t => t.key === sub.type).slots;
+                    for (let i = 0; i < sections.length; i++) {
+                        remainingSubjects[i][sub.id] = slotsNeeded;
+                    }
+                });
+
+                const sortedSubjects = [...subjects].sort((a, b) => {
+                    const order = { lab: 4, development: 3, activity: 2, theory: 1 };
+                    return order[b.type] - order[a.type];
+                });
+
+                let schedulingErrors = [];
+                const lunchAbsIndex = allSlots.findIndex(s => s.isLunch);
+                
+                // --- SCHEDULING ALGORITHM ---
+
+                for (let day = 0; day < DAYS_OF_WEEK.length; day++) {
+                    const dailyScheduledSubjects = Array.from({ length: sections.length }, () => new Set()); 
+                    const dailyLabScheduled = Array(sections.length).fill(false); 
+                    const dailyDevScheduled = Array(sections.length).fill(false); 
+
+                    const getRelativeSlotIndex = (absoluteSlotIndex) => {
+                        let count = 0;
+                        for (let i = 0; i < absoluteSlotIndex; i++) {
+                            if (!allSlots[i].isLunch) count++;
+                        }
+                        return count;
+                    };
+
+                    const labSlots = 3;
+                    const devSlots = 2;
+                    const validLabStartSlots = [];
+                    const validDevStartSlots = [];
+                    
+                    if (lunchAbsIndex > 0 && getRelativeSlotIndex(lunchAbsIndex) >= labSlots) { 
+                        validLabStartSlots.push(0); 
+                    }
+                    const afterLunchAbsIndex = allSlots.findIndex(s => s.isLunch) + 1;
+                    if (afterLunchAbsIndex < allSlots.length && totalPeriods - getRelativeSlotIndex(afterLunchAbsIndex) >= labSlots) { 
+                         validLabStartSlots.push(getRelativeSlotIndex(afterLunchAbsIndex)); 
+                    }
+
+                    for (let i = 0; i <= totalPeriods - devSlots; i++) {
+                         validDevStartSlots.push(i);
+                    }
+                    
+                    // 1. Schedule Labs
+                    sortedSubjects.filter(s => s.type === 'lab').forEach(sub => {
+                        for (let section = 0; section < sections.length; section++) {
+                            if (remainingSubjects[section][sub.id] > 0 && !dailyLabScheduled[section]) { 
+                                for (const startSlot of validLabStartSlots) {
+                                    let isSlotFree = true;
+                                    for (let s = startSlot; s < startSlot + labSlots; s++) { 
+                                        if (newSchedule[day][s][section] !== null) {
+                                            isSlotFree = false; break;
+                                        }
+                                    }
+                                    if (!isSlotFree) continue;
+
+                                    const staff = [sub.lecturer, ...sub.labStaff].filter(st => st && st.trim() !== '');
+                                    let isStaffFree = true;
+                                    for (let s = startSlot; s < startSlot + labSlots; s++) {
+                                        const timeKey = `${day}-${s}`; 
+                                        for (const st of staff) {
+                                            if (globalStaffAssignments.get(st)?.has(timeKey)) {
+                                                isStaffFree = false; break;
+                                            }
+                                        }
+                                        if (!isStaffFree) break;
+                                    }
+
+                                    if (isStaffFree) {
+                                        for (let s = startSlot; s < startSlot + labSlots; s++) {
+                                            newSchedule[day][s][section] = sub.id;
+                                            const timeKey = `${day}-${s}`;
+                                            for (const st of staff) {
+                                                if (!globalStaffAssignments.has(st)) globalStaffAssignments.set(st, new Set());
+                                                globalStaffAssignments.get(st).add(timeKey);
+                                            }
+                                        }
+                                        remainingSubjects[section][sub.id] -= labSlots;
+                                        dailyScheduledSubjects[section].add(sub.id);
+                                        dailyLabScheduled[section] = true;
+                                        break; 
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    // 2. Schedule Activity
+                    const lastPeriodIndex = totalPeriods - 1;
+                    if (lastPeriodIndex >= 0) {
+                         sortedSubjects.filter(s => s.type === 'activity').forEach(sub => {
+                            for (let section = 0; section < sections.length; section++) {
+                                if (remainingSubjects[section][sub.id] > 0 && 
+                                    newSchedule[day][lastPeriodIndex][section] === null &&
+                                    !dailyScheduledSubjects[section].has(sub.id)
+                                ) {
+                                    const timeKey = `${day}-${lastPeriodIndex}`;
+                                    const isStaffFree = !globalStaffAssignments.get(sub.lecturer)?.has(timeKey);
+
+                                    if (isStaffFree) {
+                                        newSchedule[day][lastPeriodIndex][section] = sub.id;
+                                        remainingSubjects[section][sub.id] -= 1;
+                                        dailyScheduledSubjects[section].add(sub.id);
+                                        if (!globalStaffAssignments.has(sub.lecturer)) globalStaffAssignments.set(sub.lecturer, new Set());
+                                        globalStaffAssignments.get(sub.lecturer).add(timeKey);
+                                    }
+                                }
+                            }
+                         });
+                    }
+
+
+                    // 3. Schedule Development
+                    sortedSubjects.filter(s => s.type === 'development').forEach(sub => {
+                        for (let section = 0; section < sections.length; section++) {
+                            if (remainingSubjects[section][sub.id] > 0 && !dailyLabScheduled[section] && !dailyDevScheduled[section]) {
+                                  for (const startSlot of validDevStartSlots) {
+                                    let isSlotFree = newSchedule[day][startSlot][section] === null && newSchedule[day][startSlot + 1][section] === null;
+
+                                    if (isSlotFree) {
+                                        const timeKey1 = `${day}-${startSlot}`;
+                                        const timeKey2 = `${day}-${startSlot + 1}`;
+                                        const isStaffFree1 = !globalStaffAssignments.get(sub.lecturer)?.has(timeKey1);
+                                        const isStaffFree2 = !globalStaffAssignments.get(sub.lecturer)?.has(timeKey2);
+
+                                        if (isStaffFree1 && isStaffFree2) {
+                                            newSchedule[day][startSlot][section] = sub.id;
+                                            newSchedule[day][startSlot + 1][section] = sub.id;
+                                            remainingSubjects[section][sub.id] -= devSlots;
+                                            dailyScheduledSubjects[section].add(sub.id);
+
+                                            if (!globalStaffAssignments.has(sub.lecturer)) globalStaffAssignments.set(sub.lecturer, new Set());
+                                            globalStaffAssignments.get(sub.lecturer).add(timeKey1);
+                                            globalStaffAssignments.get(sub.lecturer).add(timeKey2);
+
+                                            dailyDevScheduled[section] = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+
+                    // 4. Schedule Theory
+                    sortedSubjects.filter(s => s.type === 'theory').forEach(sub => {
+                        for (let section = 0; section < sections.length; section++) {
+                            while (remainingSubjects[section][sub.id] > 0 && !dailyScheduledSubjects[section].has(sub.id)) {
+                                let placed = false;
+                                for (let slot = 0; slot < totalPeriods; slot++) {
+                                    if (newSchedule[day][slot][section] === null) { 
+                                        const timeKey = `${day}-${slot}`;
+                                        const isStaffFree = !globalStaffAssignments.get(sub.lecturer)?.has(timeKey);
+
+                                        if (isStaffFree) {
+                                            newSchedule[day][slot][section] = sub.id;
+                                            remainingSubjects[section][sub.id] -= 1;
+                                            dailyScheduledSubjects[section].add(sub.id); 
+
+                                            if (!globalStaffAssignments.has(sub.lecturer)) globalStaffAssignments.set(sub.lecturer, new Set());
+                                            globalStaffAssignments.get(sub.lecturer).add(timeKey);
+                                            placed = true;
+                                            break; 
+                                        }
+                                    }
+                                }
+                                if (!placed && remainingSubjects[section][sub.id] > 0) {
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                } // End of Day Loop
+
+                // Final Schedule Check 
+                let allScheduled = true;
+                let schedulingErrorsFinal = [];
+                for (let i = 0; i < sections.length; i++) {
+                    for (const subId in remainingSubjects[i]) {
+                        if (remainingSubjects[i][subId] > 0) {
+                            allScheduled = false;
+                            schedulingErrorsFinal.push(`- ${subjectMap.get(subId)?.name || subId} for Section ${sections[i]}: ${remainingSubjects[i][subId]} periods left.`);
+                        }
+                    }
+                }
+
+                if (!allScheduled) {
+                     setErrors(["Could not schedule all required slots. Remaining periods left (Subject, Section, Count):", ...schedulingErrorsFinal]);
+                }
+
+                setSchedules(newSchedule);
+                setIsGenerating(false);
+
+            }, [config, subjects, totalPeriods, sectionLetters, allSlots]);
+
+            // --- Component for Subject Input Form (Same as previous) ---
+            const SubjectInput = () => (
+                <form onSubmit={addSubject} className="p-4 bg-white shadow-md rounded-lg">
+                    <h3 className="text-lg font-semibold mb-4 text-blue-800">Add New Subject</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <input type="text" name="name" placeholder="Subject Name" value={newSubject.name} onChange={handleNewSubjectChange} className="input-field" required />
+                        <input type="text" name="lecturer" placeholder="Lead Lecturer Name (Staff Name)" value={newSubject.lecturer} onChange={handleNewSubjectChange} className="input-field" required />
+                        <input type="text" name="code" placeholder="Subject Code" value={newSubject.code} onChange={handleNewSubjectChange} className="input-field" required />
+                        <select name="type" value={newSubject.type} onChange={handleNewSubjectChange} className="input-field bg-gray-50">
+                            {SUBJECT_TYPES.map(t => (
+                                <option key={t.key} value={t.key}>{t.label} (Type: {t.key})</option>
+                            ))}
+                        </select>
+                        <input type="tel" name="mobile" placeholder="Lecturer Mobile (Optional)" value={newSubject.mobile} onChange={handleNewSubjectChange} className="input-field" />
+                    </div>
+
+                    {newSubject.type === 'lab' && (
+                        <div className="mt-4 p-3 border border-dashed rounded-lg bg-yellow-100">
+                            <p className="font-medium text-sm mb-2 text-yellow-800">Lab Staff (Required for 3-period lab):</p>
+                            <div className="grid grid-cols-3 gap-3">
+                                {newSubject.labStaff.map((staff, index) => (
+                                    <input key={index} type="text" placeholder={`Staff ${index + 1} Name`} value={staff} onChange={(e) => handleLabStaffChange(index, e.target.value)} className="input-field" required={index < 3} />
+                                ))}
+                            </div>
+                            <p className="mt-2 text-xs text-yellow-800">Note: Lab staff also cannot overlap with other lectures.</p>
+                        </div>
+                    )}
+
+                    <button type="submit" className="mt-4 w-full py-2 px-4 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors">
+                        Add Subject
+                    </button>
+                </form>
+            );
+
+            // --- Component for Timetable and Details Display (MODIFIED) ---
+            const TimetableDisplay = ({ schedule, sectionIdx, sectionLetter, allSlots, subjectMap, logoUrl }) => {
+                
+                // 1. Re-construct the data to align with Days in the first column (rows)
+                
+                // Get the filtered time slots (excluding lunch)
+                const periodSlots = allSlots.filter(s => !s.isLunch);
+                
+                // Create an array that includes the lunch slot's time index for the header
+                const timeHeaders = allSlots.map(slot => ({
+                    timeStr: `${slot.start} - ${slot.end}`,
+                    isLunch: slot.isLunch,
+                    periodIndex: slot.isLunch ? null : periodSlots.findIndex(p => p.start === slot.start)
+                }));
+                
+                // Determine which subjects are present in this section
+                const uniqueSubjects = Array.from(new Set(
+                    schedule.flat().map(daySlots => daySlots.flat()).flat()
+                                .filter(id => id !== null && id !== undefined)
+                    )
+                )
+                .map(id => subjectMap.get(id))
+                .filter(sub => sub);
+
+                return (
+                    <div className="timetable-output-section shadow-lg p-6 bg-white rounded-xl">
+                        {logoUrl && <img src={logoUrl} alt="College Logo" style={{ maxWidth: '100px', margin: '0 auto 10px' }} />}
+                        <h2 className="timetable-title">Section {sectionLetter} Timetable ({config.periodDuration} min periods)</h2>
+                        
+                        {/* Timetable Table */}
+                        <div className="timetable-container">
+                            <table className="timetable-table">
+                                <thead>
+                                    <tr>
+                                        {/* Days in the first column, Time in the first row */}
+                                        <th>Day/Time</th>
+                                        {timeHeaders.map((header, index) => (
+                                            <th key={index} style={{ minWidth: '80px' }}>
+                                                {header.isLunch ? 'LUNCH' : header.timeStr}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {DAYS_OF_WEEK.map((day, dayIndex) => (
+                                        <tr key={dayIndex}>
+                                            <td className="day-slot">{day}</td>
+                                            {timeHeaders.map((header, timeIndex) => {
+                                                if (header.isLunch) {
+                                                    // Merge all day rows for the single Lunch break column
+                                                    if (dayIndex === 0) { // Only render on the first day
+                                                        return (
+                                                            <td key={timeIndex} rowSpan={DAYS_OF_WEEK.length} className="lunch-slot" style={{ minWidth: '50px' }}>
+                                                                LUNCH <br/> ({config.lunchDuration} MIN)
+                                                            </td>
+                                                        );
+                                                    }
+                                                    return null; // Skip rendering for subsequent days
+                                                }
+                                                
+                                                const periodIndex = header.periodIndex;
+                                                const subjectId = schedule[dayIndex][periodIndex][sectionIdx];
+                                                const subject = subjectId ? subjectMap.get(subjectId) : null;
+
+                                                let colspan = 1;
+                                                let typeKey = 'free';
+
+                                                if (subject) {
+                                                    typeKey = subject.type;
+                                                    const subType = SUBJECT_TYPES.find(t => t.key === subject.type);
+                                                    const totalSlots = subType ? subType.slots : 1;
+                                                    
+                                                    // Check for merged cells (Development or Lab)
+                                                    if (totalSlots > 1) {
+                                                        const isStartOfBlock = periodIndex === 0 || schedule[dayIndex][periodIndex - 1][sectionIdx] !== subjectId;
+                                                        
+                                                        if (isStartOfBlock) {
+                                                            // Count how many consecutive cells are this subject in the same day/row
+                                                            let count = 0;
+                                                            for (let i = periodIndex; i < periodSlots.length; i++) {
+                                                                // Need to find the absolute time index, ignoring lunch slots
+                                                                let absTimeIndex = allSlots.findIndex(s => s.start === periodSlots[i].start);
+                                                                
+                                                                if (schedule[dayIndex][periodSlots.findIndex(p => p.start === allSlots[absTimeIndex].start)][sectionIdx] === subjectId) {
+                                                                    count++;
+                                                                } else {
+                                                                    break;
+                                                                }
+                                                            }
+                                                            colspan = count;
+                                                        } else {
+                                                            // If it's a continuation, skip rendering (handled by colspan above)
+                                                            return null; 
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                return (
+                                                    <td key={timeIndex} colSpan={colspan} className={`subject-cell bg-${typeKey}`}>
+                                                        {subject ? (
+                                                            <strong>{subject.name}</strong>
+                                                        ) : (
+                                                            <span className="text-gray-400 text-xs">Free</span>
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        {/* Details Table */}
+                        <div className="details-table-container">
+                            <h3 className="text-lg font-semibold mb-3 text-blue-800">Subject and Lecturer Details</h3>
+                            <table className="details-table">
+                                <thead>
+                                    <tr>
+                                        <th>Subject Name (Code)</th>
+                                        <th>Type (Periods)</th>
+                                        <th>Lecturer</th>
+                                        <th>Mobile</th>
+                                        <th>Lab Staff</th>
+                                        <th>Freq. Scheduled</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {uniqueSubjects.map(sub => (
+                                        <tr key={sub.id}>
+                                            <td>{sub.name} ({sub.code})</td>
+                                            <td>{sub.type.toUpperCase()} ({SUBJECT_TYPES.find(t => t.key === sub.type)?.slots} Periods)</td>
+                                            <td>{sub.lecturer}</td>
+                                            <td>{sub.mobile}</td>
+                                            <td>{sub.labStaff.length > 0 ? sub.labStaff.join(', ') : 'N/A'}</td>
+                                            <td>{sub.frequency} times/wk</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            };
+
+            const subjectMap = useMemo(() => new Map(subjects.map(s => [s.id, s])), [subjects]);
+            
+            // --- Render Method (Same as previous) ---
+            return (
+                <div className="min-h-screen p-8">
+                    <div className="container">
+                        <h1 className="text-3xl font-bold text-blue-600 mb-6 text-center">
+                            Smart Timetable Scheduler
+                        </h1>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
+                            <div className="lg:col-span-1 p-6 bg-white shadow-lg rounded-xl h-fit">
+                                <h2 className="text-lg font-semibold mb-4 text-blue-800">Time & Section Config</h2>
+                                <label className="block mb-2 text-sm">Period Duration (min)</label>
+                                <input type="number" name="periodDuration" value={config.periodDuration} onChange={handleConfigChange} className="input-field mb-3" />
+                                
+                                <label className="block mb-2 text-sm">Start Time</label>
+                                <input type="time" name="startTime" value={config.startTime} onChange={handleConfigChange} className="input-field mb-3" />
+                                
+                                <label className="block mb-2 text-sm">End Time</label>
+                                <input type="time" name="endTime" value={config.endTime} onChange={handleConfigChange} className="input-field mb-3" />
+                                
+                                <label className="block mb-2 text-sm">Lunch Time Start</label>
+                                <input type="time" name="lunchTime" value={config.lunchTime} onChange={handleConfigChange} className="input-field mb-3" />
+                                
+                                <label className="block mb-2 text-sm">Lunch Duration (min)</label>
+                                <input type="number" name="lunchDuration" value={config.lunchDuration} onChange={handleConfigChange} className="input-field mb-3" />
+
+                                <label className="block mb-2 text-sm">Number of Sections (A, B, C...)</label>
+                                <input type="number" name="numSections" value={config.numSections} onChange={handleConfigChange} min="1" max="5" className="input-field mb-3" />
+                                
+                                <label className="block mb-2 text-sm">Logo URL (Optional)</label>
+                                <input type="text" name="logoUrl" placeholder="Paste image link here" value={config.logoUrl} onChange={handleConfigChange} className="input-field" />
+                                
+                                <button onClick={generateTimetable} disabled={isGenerating || subjects.length === 0}
+                                    className={`mt-6 w-full py-2 px-4 text-white font-semibold rounded-lg transition-colors ${isGenerating ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                    {isGenerating ? 'Generating...' : 'Generate Timetable'}
+                                </button>
+                                
+                                {schedules && (
+                                    <button onClick={exportToPDF} className="mt-2 w-full py-2 px-4 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors">
+                                        Export to PDF
+                                    </button>
+                                )}
+
+                                {errors.length > 0 && (
+                                    <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-600 rounded-lg text-sm">
+                                        <p className="font-bold">Errors:</p>
+                                        {errors.map((err, i) => <p key={i}>{err}</p>)}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="lg:col-span-3">
+                                <SubjectInput />
+                                
+                                <div className="mt-6 p-4 bg-white shadow-md rounded-lg">
+                                    <h3 className="text-lg font-semibold mb-4 text-blue-800">Subjects List</h3>
+                                    <ul className="space-y-3">
+                                        {subjects.map(sub => (
+                                            <li key={sub.id} className="flex justify-between items-center p-3 border rounded-lg bg-gray-50">
+                                                <div>
+                                                    <strong className="text-gray-800">{sub.name} ({sub.code})</strong>
+                                                    <span className="block text-sm text-gray-600">Lecturer: {sub.lecturer} | Type: {sub.type.toUpperCase()} | Staff: {sub.labStaff.length > 0 ? sub.labStaff.join(', ') : 'N/A'}</span>
+                                                </div>
+                                                <div className="flex items-center space-x-3">
+                                                     <div className="flex items-center text-sm">
+                                                        <span className="mr-2">Freq/wk:</span>
+                                                        <input 
+                                                            type="number" 
+                                                            value={sub.frequency} 
+                                                            onChange={(e) => updateSubjectFrequency(sub.id, e.target.value)} 
+                                                            min="1" 
+                                                            max="10" 
+                                                            className="w-12 p-1 border rounded text-center"
+                                                        />
+                                                    </div>
+                                                    <button onClick={() => removeSubject(sub.id)} className="text-red-600 hover:text-red-800 transition-colors">
+                                                        &#x2715;
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* --- Timetable Output --- */}
+                        {schedules && (
+                            <div id="timetable-output-section" className="space-y-8 mt-10">
+                                {sectionLetters.map((letter, index) => (
+                                    <TimetableDisplay 
+                                        key={letter}
+                                        schedule={schedules} 
+                                        sectionIdx={index} 
+                                        sectionLetter={letter} 
+                                        allSlots={allSlots}
+                                        subjectMap={subjectMap}
+                                        logoUrl={config.logoUrl}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => (
+            <TimetableGenerator />
+        );
+
+        // Render the React App into the 'root' div
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
